@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BillStatus {
+  due
+  partial
+  paid
+  waived
+}
+
+enum BillFollowUpStatus {
+  message_send
+  pay_later
+  partially_paid
+}
+
+enum MessageStatus {
+  draft
+  sending
+  sent
+  failed
+}
+
+enum TemplateType {
+  reminder
+  confirmation
+  general
+  account_information
+}
+
+model Client {
+  id          String        @id @default(cuid())
+  name        String
+  email       String?
+  whatsapp    String
+  crmTemporaryPassword String?
+  clientType  String        @default("Normal")
+  notes       String?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  sites       Site[]
+  bills       MonthlyBill[]
+  messages    WaMessage[]
+
+  @@index([isActive])
+  @@index([whatsapp])
+}
+
+model Site {
+  id          String   @id @default(cuid())
+  clientId    String
+  domain      String
+  serverLabel String?
+  monthlyBill Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([isActive])
+}
+
+model MonthlyBill {
+  id          String       @id @default(cuid())
+  clientId    String
+  month       String
+  totalAmount Int
+  status      BillStatus   @default(due)
+  followUpStatus BillFollowUpStatus @default(pay_later)
+  note        String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  payments    Payment[]
+  messages    WaMessage[]
+
+  @@unique([clientId, month])
+  @@index([month])
+  @@index([status])
+  @@index([followUpStatus])
+}
+
+model Payment {
+  id        String      @id @default(cuid())
+  billId    String
+  amount    Int
+  paidAt    DateTime    @default(now())
+  method    String?
+  note      String?
+  createdAt DateTime    @default(now())
+  bill      MonthlyBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+}
+
+model MessageTemplate {
+  id        String       @id @default(cuid())
+  name      String
+  type      TemplateType @default(reminder)
+  body      String
+  isDefault Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  messages  WaMessage[]
+
+  @@index([type])
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WaMessage {
+  id             String        @id @default(cuid())
+  clientId       String
+  billId         String?
+  templateId     String?
+  month          String
+  type           TemplateType   @default(reminder)
+  chatId         String
+  body           String
+  selected       Boolean       @default(true)
+  status         MessageStatus @default(draft)
+  idempotencyKey String        @unique
+  waMessageId    String?
+  waTimestamp    Int?
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  client         Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  bill           MonthlyBill?  @relation(fields: [billId], references: [id], onDelete: SetNull)
+  template       MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([month])
+  @@index([status])
+  @@index([clientId])
+}
