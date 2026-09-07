@@ -18,17 +18,16 @@ Open `http://localhost:3000`, sign in with `ADMIN_PASSWORD`, then use `/dashboar
 
 Create a GitHub-backed Docker Compose resource using `docker-compose.coolify.yml` and attach `advista.hasibweb.com` to the `app` service.
 
-Required environment variables:
+Coolify generates these required secrets from `docker-compose.coolify.yml`:
 
 ```text
-POSTGRES_USER
-POSTGRES_PASSWORD
-POSTGRES_DB
-ADMIN_PASSWORD
-AUTH_SECRET
-AUTH_COOKIE_SECURE=true
-HASIBWEB_WA_BASE_URL=https://wa.hasibweb.com
+SERVICE_PASSWORD_POSTGRES
+SERVICE_PASSWORD_ADMIN
+SERVICE_REALBASE64_64_AUTH
 ```
+
+The app service declares `SERVICE_FQDN_APP_3000=https://advista.hasibweb.com`.
+Optional override: `HASIBWEB_WA_BASE_URL=https://wa.hasibweb.com`.
 
 WhatsApp API key and session ID are configured from the dashboard Settings page.
 Secrets must stay in Coolify, local `.env`, or dashboard Settings; do not commit them.
