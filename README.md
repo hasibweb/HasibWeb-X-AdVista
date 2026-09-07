@@ -32,3 +32,15 @@ HASIBWEB_WA_BASE_URL=https://wa.hasibweb.com
 
 WhatsApp API key and session ID are configured from the dashboard Settings page.
 Secrets must stay in Coolify, local `.env`, or dashboard Settings; do not commit them.
+
+## GitHub Actions deployment
+
+The `Deploy to Coolify` workflow triggers on every push to `main` and can also be run manually from GitHub Actions.
+
+Add these repository secrets in GitHub:
+
+```text
+COOLIFY_URL=https://coolify.hasibweb.com
+COOLIFY_TOKEN=<Coolify API token with deploy permission>
+COOLIFY_RESOURCE_UUID=<Coolify application or service UUID>
+```

@@ -1,0 +1,30 @@
+name: Deploy to Coolify
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Coolify deployment
+        env:
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_RESOURCE_UUID: ${{ secrets.COOLIFY_RESOURCE_UUID }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${COOLIFY_URL}" ] || [ -z "${COOLIFY_TOKEN}" ] || [ -z "${COOLIFY_RESOURCE_UUID}" ]; then
+            echo "Missing one or more required secrets: COOLIFY_URL, COOLIFY_TOKEN, COOLIFY_RESOURCE_UUID"
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data "{\"uuid\":\"${COOLIFY_RESOURCE_UUID}\",\"force\":false}" \
+            "${COOLIFY_URL%/}/api/v1/deploy"
