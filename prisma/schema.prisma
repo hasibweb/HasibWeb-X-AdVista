@@ -40,6 +40,7 @@ model Client {
   email       String?
   whatsapp    String
   crmTemporaryPassword String?
+  followUpStatus BillFollowUpStatus @default(pay_later)
   clientType  String        @default("Normal")
   notes       String?
   isActive    Boolean       @default(true)
@@ -51,6 +52,7 @@ model Client {
 
   @@index([isActive])
   @@index([whatsapp])
+  @@index([followUpStatus])
 }
 
 model Site {

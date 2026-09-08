@@ -47,6 +47,7 @@ type Client = {
   name: string;
   email: string | null;
   whatsapp: string;
+  followUpStatus: BillFollowUpStatus;
   clientType: string;
   crmTemporaryPassword: string | null;
   notes: string | null;
@@ -1060,27 +1061,70 @@ function BillClientGroup({
 }) {
   const allSelected = group.bills.every((bill) => selectedBillIds.includes(bill.id));
   const someSelected = group.bills.some((bill) => selectedBillIds.includes(bill.id));
+  const [followUpStatus, setFollowUpStatus] = useState<BillFollowUpStatus>(group.client.followUpStatus || 'pay_later');
+  const [savingStatus, setSavingStatus] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    setFollowUpStatus(group.client.followUpStatus || 'pay_later');
+  }, [group.client.followUpStatus]);
+
+  async function updateFollowUpStatus(nextStatus: BillFollowUpStatus) {
+    setFollowUpStatus(nextStatus);
+    setSavingStatus(true);
+    setNotice('');
+    try {
+      await api(`/api/clients/${group.client.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ followUpStatus: nextStatus }),
+      });
+      onChanged();
+    } catch (error) {
+      setFollowUpStatus(group.client.followUpStatus || 'pay_later');
+      setNotice(error instanceof Error ? error.message : 'Client status could not be saved.');
+    } finally {
+      setSavingStatus(false);
+    }
+  }
 
   return (
     <div className="border-b border-slate-100 last:border-b-0">
       <div className="flex flex-wrap items-start justify-between gap-3 bg-white px-4 py-2">
-        <label className="flex min-w-0 items-start gap-3">
-          <input
-            className="mt-1 h-4 w-4"
-            type="checkbox"
-            checked={allSelected}
-            ref={(input) => {
-              if (input) input.indeterminate = someSelected && !allSelected;
-            }}
-            onChange={onToggleClient}
-          />
-          <span className="min-w-0">
-            <span className="block text-lg font-semibold text-ink">{group.client.name}</span>
-            <span className="block text-sm text-slate-500">{group.client.whatsapp}</span>
-          </span>
-        </label>
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900">
-          Total due {money.format(group.dueTotal)} BDT
+        <div className="flex min-w-0 flex-wrap items-start gap-3">
+          <label className="flex min-w-0 items-start gap-3">
+            <input
+              className="mt-1 h-4 w-4"
+              type="checkbox"
+              checked={allSelected}
+              ref={(input) => {
+                if (input) input.indeterminate = someSelected && !allSelected;
+              }}
+              onChange={onToggleClient}
+            />
+            <span className="min-w-0">
+              <span className="block text-lg font-semibold text-ink">{group.client.name}</span>
+              <span className="block text-sm text-slate-500">{group.client.whatsapp}</span>
+            </span>
+          </label>
+          <select
+            className="focus-ring h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            value={followUpStatus}
+            onChange={(event) => updateFollowUpStatus(event.target.value as BillFollowUpStatus)}
+            disabled={savingStatus}
+            aria-label={`${group.client.name} follow-up status`}
+          >
+            {followUpOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {notice ? <p className="text-sm font-medium text-red-700">{notice}</p> : null}
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900">
+            Total due {money.format(group.dueTotal)} BDT
+          </div>
         </div>
       </div>
       <div className="divide-y divide-slate-100 bg-slate-50/45">
@@ -1095,19 +1139,13 @@ function BillClientGroup({
 function BillDueRow({ bill, selected, onToggle, onChanged }: { bill: Bill; selected: boolean; onToggle: () => void; onChanged: () => void }) {
   const [deleting, setDeleting] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
-  const [savingStatus, setSavingStatus] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState(bill.note || '');
-  const [followUpStatus, setFollowUpStatus] = useState<BillFollowUpStatus>(bill.followUpStatus || 'pay_later');
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
     setNoteDraft(bill.note || '');
   }, [bill.note]);
-
-  useEffect(() => {
-    setFollowUpStatus(bill.followUpStatus || 'pay_later');
-  }, [bill.followUpStatus]);
 
   async function deleteBill() {
     const confirmed = window.confirm(`Delete ${bill.client.name}'s bill for ${monthLabel(bill.month)}? This will also remove payments recorded for this bill.`);
@@ -1142,27 +1180,9 @@ function BillDueRow({ bill, selected, onToggle, onChanged }: { bill: Bill; selec
     }
   }
 
-  async function updateFollowUpStatus(nextStatus: BillFollowUpStatus) {
-    setFollowUpStatus(nextStatus);
-    setSavingStatus(true);
-    setNotice('');
-    try {
-      await api(`/api/bills/${bill.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ followUpStatus: nextStatus }),
-      });
-      onChanged();
-    } catch (error) {
-      setFollowUpStatus(bill.followUpStatus || 'pay_later');
-      setNotice(error instanceof Error ? error.message : 'Bill status could not be saved.');
-    } finally {
-      setSavingStatus(false);
-    }
-  }
-
   return (
     <div className="px-4 py-2">
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_190px_160px_120px]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_160px_120px]">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <input className="h-4 w-4" type="checkbox" checked={selected} onChange={onToggle} />
           <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">{monthLabel(bill.month)}</span>
@@ -1180,18 +1200,6 @@ function BillDueRow({ bill, selected, onToggle, onChanged }: { bill: Bill; selec
             onSave={saveNote}
           />
         </div>
-        <select
-          className="focus-ring h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-          value={followUpStatus}
-          onChange={(event) => updateFollowUpStatus(event.target.value as BillFollowUpStatus)}
-          disabled={savingStatus}
-        >
-          {followUpOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
         <div className="flex min-h-9 items-center justify-between gap-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-1.5 text-sm">
           <span className="text-xs font-semibold uppercase tracking-[0.1em] text-amber-700">Due</span>
           <span className="font-semibold text-amber-900">{money.format(bill.dueAmount)} BDT</span>
@@ -1767,12 +1775,14 @@ function ClientPickerSidebar({
   onClose: () => void;
 }) {
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<BillFollowUpStatus | 'all'>('all');
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return clients;
+    const statusFilteredClients = statusFilter === 'all' ? clients : clients.filter((client) => (client.followUpStatus || 'pay_later') === statusFilter);
+    if (!query) return statusFilteredClients;
 
-    return clients.filter((client) => `${client.name} ${client.whatsapp}`.toLowerCase().includes(query));
-  }, [clients, search]);
+    return statusFilteredClients.filter((client) => `${client.name} ${client.whatsapp}`.toLowerCase().includes(query));
+  }, [clients, search, statusFilter]);
 
   function toggleClient(clientId: string) {
     onChange(selectedClientIds.includes(clientId) ? selectedClientIds.filter((id) => id !== clientId) : [...selectedClientIds, clientId]);
@@ -1805,6 +1815,19 @@ function ClientPickerSidebar({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
+          <select
+            className="focus-ring w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as BillFollowUpStatus | 'all')}
+            aria-label="Filter clients by follow-up status"
+          >
+            <option value="all">All statuses</option>
+            {followUpOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <div className="flex flex-wrap gap-2">
             <button className="focus-ring rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50" onClick={selectVisible} disabled={!filteredClients.length}>
               Select all visible
@@ -1817,11 +1840,14 @@ function ClientPickerSidebar({
 
         <div className="flex-1 divide-y divide-slate-100">
           {filteredClients.map((client) => (
-            <label key={client.id} className="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-slate-50">
+            <label key={client.id} className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-slate-50">
               <input className="mt-1 h-4 w-4" type="checkbox" checked={selectedClientIds.includes(client.id)} onChange={() => toggleClient(client.id)} />
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold text-ink">{client.name}</span>
                 <span className="block truncate text-sm text-slate-500">{client.whatsapp}</span>
+              </span>
+              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                {followUpOptions.find((option) => option.value === (client.followUpStatus || 'pay_later'))?.label || 'Pay Later'}
               </span>
             </label>
           ))}

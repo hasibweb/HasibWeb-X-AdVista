@@ -16,6 +16,7 @@ const clientSchema = z.object({
   email: z.string().email().optional().or(z.literal('')).nullable(),
   whatsapp: z.string().min(8),
   crmTemporaryPassword: z.string().optional().nullable(),
+  followUpStatus: z.enum(['message_send', 'pay_later', 'partially_paid']).optional().default('pay_later'),
   clientType: z.enum(['Normal', 'Agency']).optional().default('Normal'),
   notes: z.string().optional().nullable(),
   sites: z.array(siteSchema).default([]),
@@ -78,6 +79,7 @@ export async function POST(request: Request) {
         email: input.email || null,
         whatsapp: input.whatsapp,
         crmTemporaryPassword: input.crmTemporaryPassword || null,
+        followUpStatus: input.followUpStatus,
         clientType: input.clientType || 'Normal',
         notes: input.notes || null,
         sites: {

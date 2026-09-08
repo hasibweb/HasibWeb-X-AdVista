@@ -9,6 +9,7 @@ const updateSchema = z.object({
   email: z.string().email().optional().or(z.literal('')).nullable(),
   whatsapp: z.string().min(8).optional(),
   crmTemporaryPassword: z.string().optional().nullable(),
+  followUpStatus: z.enum(['message_send', 'pay_later', 'partially_paid']).optional(),
   clientType: z.enum(['Normal', 'Agency']).optional(),
   notes: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
