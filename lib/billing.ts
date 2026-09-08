@@ -35,7 +35,7 @@ export type BillWithClient = Prisma.MonthlyBillGetPayload<{
 
 export function buildTemplateContext(
   bill: BillWithClient,
-  settings: { crmName?: string | null; clientDashboardLink?: string | null } = {},
+  settings: { crmName?: string | null; clientDashboardLink?: string | null; previousDueAmount?: number } = {},
 ) {
   const paid = paidAmount(bill.payments);
   const activeSites = bill.client.sites.filter((site) => site.isActive);
@@ -50,7 +50,7 @@ export function buildTemplateContext(
     domains: activeSites.map((site) => site.domain).join(', ') || 'N/A',
     payment_status: bill.status,
     paid_amount: money.format(paid),
-    due_amount: money.format(Math.max(bill.totalAmount - paid, 0)),
+    due_amount: money.format(Math.max(settings.previousDueAmount ?? bill.totalAmount - paid, 0)),
     crm_temporary_password: valueOrFallback(bill.client.crmTemporaryPassword),
     crm_name: valueOrFallback(settings.crmName),
     client_dashboard_link: valueOrFallback(settings.clientDashboardLink),

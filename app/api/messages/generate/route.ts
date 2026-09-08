@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { jsonError, requireAdmin } from '@/lib/api';
-import { buildTemplateContext, normalizeMonth, renderTemplate } from '@/lib/billing';
+import { buildTemplateContext, normalizeMonth, paidAmount, renderTemplate } from '@/lib/billing';
 import { prisma } from '@/lib/db';
 import { toChatId } from '@/lib/whatsapp';
 
@@ -40,11 +40,32 @@ export async function POST(request: Request) {
       },
       orderBy: { client: { name: 'asc' } },
     });
+    const previousBills = await prisma.monthlyBill.findMany({
+      where: {
+        month: { lt: month },
+        status: { in: ['due', 'partial'] },
+        clientId: { in: input.clientIds },
+      },
+      include: { payments: true },
+    });
+    const previousDueByClientId = previousBills.reduce((totals, bill) => {
+      const due = Math.max(bill.totalAmount - paidAmount(bill.payments), 0);
+      if (due > 0) {
+        totals.set(bill.clientId, (totals.get(bill.clientId) || 0) + due);
+      }
+      return totals;
+    }, new Map<string, number>());
 
     const messages = [];
     for (const bill of bills) {
       const idempotencyKey = `advista:${input.type}:${month}:${bill.clientId}`;
-      const body = renderTemplate(template.body, buildTemplateContext(bill, templateSettings));
+      const body = renderTemplate(
+        template.body,
+        buildTemplateContext(bill, {
+          ...templateSettings,
+          previousDueAmount: previousDueByClientId.get(bill.clientId) || 0,
+        }),
+      );
       const message = await prisma.waMessage.upsert({
         where: { idempotencyKey },
         create: {
