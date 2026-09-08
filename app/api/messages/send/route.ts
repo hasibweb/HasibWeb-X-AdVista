@@ -40,6 +40,7 @@ export async function POST(request: Request) {
           where: { id },
           data: {
             status: 'sent',
+            selected: false,
             waMessageId: result.messageId,
             waTimestamp: result.timestamp,
             sentAt: new Date(),
