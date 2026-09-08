@@ -20,7 +20,7 @@ import {
   Users,
   Zap,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MonthPicker } from './month-picker';
 
@@ -126,6 +126,18 @@ const followUpOptions: Array<{ value: BillFollowUpStatus; label: string }> = [
   { value: 'pay_later', label: 'Pay Later' },
   { value: 'partially_paid', label: 'Partially Paid' },
 ];
+
+type TextSelection = { start: number; end: number };
+
+function insertAtSelection(value: string, insertion: string, selection: TextSelection | null) {
+  const start = selection?.start ?? value.length;
+  const end = selection?.end ?? start;
+
+  return {
+    nextValue: `${value.slice(0, start)}${insertion}${value.slice(end)}`,
+    nextCursor: start + insertion.length,
+  };
+}
 
 function previousMonthValue(month: string) {
   const [year, monthNumber] = month.split('-').map(Number);
@@ -1274,8 +1286,17 @@ function TemplatesPanel({ templates, onChanged }: { templates: Template[]; onCha
     '{client_dashboard_link}',
   ];
   const [form, setForm] = useState<{ name: string; type: Template['type']; body: string }>({ name: '', type: 'reminder', body: '' });
-  const [activeEditTemplateId, setActiveEditTemplateId] = useState<string | null>(null);
+  const createBodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const createBodySelectionRef = useRef<TextSelection | null>(null);
+  const [activeTextarea, setActiveTextarea] = useState<{ type: 'create' } | { type: 'edit'; templateId: string }>({ type: 'create' });
   const [placeholderRequest, setPlaceholderRequest] = useState<{ templateId: string; placeholder: string; nonce: number } | null>(null);
+
+  function rememberCreateBodySelection() {
+    const textarea = createBodyRef.current;
+    if (!textarea) return;
+    createBodySelectionRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd };
+    setActiveTextarea({ type: 'create' });
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -1285,12 +1306,22 @@ function TemplatesPanel({ templates, onChanged }: { templates: Template[]; onCha
   }
 
   function addPlaceholder(placeholder: string) {
-    if (activeEditTemplateId) {
-      setPlaceholderRequest({ templateId: activeEditTemplateId, placeholder, nonce: Date.now() });
+    if (activeTextarea.type === 'edit') {
+      setPlaceholderRequest({ templateId: activeTextarea.templateId, placeholder, nonce: Date.now() });
       return;
     }
 
-    setForm((current) => ({ ...current, body: current.body ? `${current.body}${placeholder}` : placeholder }));
+    let nextCursor = 0;
+    setForm((current) => {
+      const inserted = insertAtSelection(current.body, placeholder, createBodySelectionRef.current);
+      nextCursor = inserted.nextCursor;
+      return { ...current, body: inserted.nextValue };
+    });
+    window.requestAnimationFrame(() => {
+      createBodyRef.current?.focus();
+      createBodyRef.current?.setSelectionRange(nextCursor, nextCursor);
+      createBodySelectionRef.current = { start: nextCursor, end: nextCursor };
+    });
   }
 
   return (
@@ -1320,7 +1351,21 @@ function TemplatesPanel({ templates, onChanged }: { templates: Template[]; onCha
             </option>
           ))}
         </select>
-        <textarea className="focus-ring h-56 w-full rounded-md border border-slate-300 px-3 py-2" placeholder="{client_name}, {phone}, {email}, {month}, {total_bill}, {bill_per_month}, {domains}, {payment_status}, {paid_amount}, {due_amount}, {crm_temporary_password}, {crm_name}, {client_dashboard_link}" value={form.body} onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} required />
+        <textarea
+          ref={createBodyRef}
+          className="focus-ring h-56 w-full rounded-md border border-slate-300 px-3 py-2"
+          placeholder="{client_name}, {phone}, {email}, {month}, {total_bill}, {bill_per_month}, {domains}, {payment_status}, {paid_amount}, {due_amount}, {crm_temporary_password}, {crm_name}, {client_dashboard_link}"
+          value={form.body}
+          onChange={(event) => {
+            setForm((current) => ({ ...current, body: event.target.value }));
+            createBodySelectionRef.current = { start: event.target.selectionStart, end: event.target.selectionEnd };
+          }}
+          onFocus={rememberCreateBodySelection}
+          onClick={rememberCreateBodySelection}
+          onKeyUp={rememberCreateBodySelection}
+          onSelect={rememberCreateBodySelection}
+          required
+        />
         <button className="focus-ring mt-3 inline-flex items-center gap-2 rounded-md bg-forest px-4 py-2 font-semibold text-white">
           <Plus size={18} /> Save template
         </button>
@@ -1331,13 +1376,11 @@ function TemplatesPanel({ templates, onChanged }: { templates: Template[]; onCha
             key={template.id}
             template={template}
             placeholderRequest={placeholderRequest}
+            onBodyFocus={() => setActiveTextarea({ type: 'edit', templateId: template.id })}
             onEditingChange={(editing) => {
-              if (editing) {
-                setActiveEditTemplateId(template.id);
-                return;
+              if (!editing && activeTextarea.type === 'edit' && activeTextarea.templateId === template.id) {
+                setActiveTextarea({ type: 'create' });
               }
-
-              setActiveEditTemplateId((current) => (current === template.id ? null : current));
             }}
             onChanged={onChanged}
           />
@@ -1464,11 +1507,13 @@ function SettingsPanel() {
 function TemplateCard({
   template,
   placeholderRequest,
+  onBodyFocus,
   onEditingChange,
   onChanged,
 }: {
   template: Template;
   placeholderRequest: { templateId: string; placeholder: string; nonce: number } | null;
+  onBodyFocus: () => void;
   onEditingChange: (editing: boolean) => void;
   onChanged: () => void;
 }) {
@@ -1477,11 +1522,20 @@ function TemplateCard({
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState('');
   const [lastPlaceholderNonce, setLastPlaceholderNonce] = useState<number | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const bodySelectionRef = useRef<TextSelection | null>(null);
   const [form, setForm] = useState<{ name: string; type: Template['type']; body: string }>({
     name: template.name,
     type: template.type,
     body: template.body,
   });
+
+  function rememberBodySelection() {
+    const textarea = bodyRef.current;
+    if (!textarea) return;
+    bodySelectionRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd };
+    onBodyFocus();
+  }
 
   useEffect(() => {
     setForm({ name: template.name, type: template.type, body: template.body });
@@ -1494,10 +1548,17 @@ function TemplateCard({
   useEffect(() => {
     if (!editing || !placeholderRequest || placeholderRequest.templateId !== template.id || placeholderRequest.nonce === lastPlaceholderNonce) return;
 
-    setForm((current) => ({
-      ...current,
-      body: current.body ? `${current.body}${placeholderRequest.placeholder}` : placeholderRequest.placeholder,
-    }));
+    let nextCursor = 0;
+    setForm((current) => {
+      const inserted = insertAtSelection(current.body, placeholderRequest.placeholder, bodySelectionRef.current);
+      nextCursor = inserted.nextCursor;
+      return { ...current, body: inserted.nextValue };
+    });
+    window.requestAnimationFrame(() => {
+      bodyRef.current?.focus();
+      bodyRef.current?.setSelectionRange(nextCursor, nextCursor);
+      bodySelectionRef.current = { start: nextCursor, end: nextCursor };
+    });
     setLastPlaceholderNonce(placeholderRequest.nonce);
   }, [editing, lastPlaceholderNonce, placeholderRequest, template.id]);
 
@@ -1564,7 +1625,19 @@ function TemplateCard({
               </option>
             ))}
           </select>
-          <textarea className="focus-ring h-52 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={form.body} onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} />
+          <textarea
+            ref={bodyRef}
+            className="focus-ring h-52 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={form.body}
+            onChange={(event) => {
+              setForm((current) => ({ ...current, body: event.target.value }));
+              bodySelectionRef.current = { start: event.target.selectionStart, end: event.target.selectionEnd };
+            }}
+            onFocus={rememberBodySelection}
+            onClick={rememberBodySelection}
+            onKeyUp={rememberBodySelection}
+            onSelect={rememberBodySelection}
+          />
           <div className="flex justify-end gap-2">
             <button type="button" className="focus-ring inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50" onClick={() => setEditing(false)}>
               <X size={15} /> Cancel
