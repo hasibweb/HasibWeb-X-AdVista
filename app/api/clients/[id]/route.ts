@@ -38,3 +38,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return jsonError(error);
   }
 }
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireAdmin();
+  if (auth) return auth;
+
+  try {
+    const { id } = await context.params;
+    await prisma.client.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return jsonError(error);
+  }
+}

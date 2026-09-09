@@ -460,7 +460,7 @@ function ClientsPanel({
     <>
       <AddClientModal open={addClientOpen} onClose={onAddClientClose} onChanged={onChanged} />
       <div className={`${cardClass} min-w-0 overflow-hidden`}>
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_140px_140px_88px] gap-3 border-b border-slate-200 px-5 py-4 text-sm font-semibold text-slate-600">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_140px_140px_190px] gap-3 border-b border-slate-200 px-5 py-4 text-sm font-semibold text-slate-600">
           <span>Client</span>
           <span>WhatsApp</span>
           <span>Bill Per Month</span>
@@ -666,6 +666,8 @@ function ClientRow({
   const [dueForm, setDueForm] = useState({ month: defaultDueMonth, amount: '', note: '' });
   const [dueNotice, setDueNotice] = useState('');
   const [dueSaving, setDueSaving] = useState(false);
+  const [deleteNotice, setDeleteNotice] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [sitesExpanded, setSitesExpanded] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -764,6 +766,22 @@ function ClientRow({
     onChanged();
   }
 
+  async function deleteClient() {
+    const confirmed = window.confirm(`Delete ${client.name}? This will also remove this client's sites, bills, payments, and messages.`);
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setDeleteNotice('');
+    try {
+      await api(`/api/clients/${client.id}`, { method: 'DELETE' });
+      onChanged();
+    } catch (error) {
+      setDeleteNotice(error instanceof Error ? error.message : 'Client could not be deleted.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function addDue(event: React.FormEvent) {
     event.preventDefault();
     setDueSaving(true);
@@ -801,7 +819,7 @@ function ClientRow({
 
   return (
     <div className="px-5 py-4">
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_140px_140px_88px] gap-3">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_140px_140px_190px] gap-3">
         <div className="min-w-0">
           <p className="truncate font-semibold">{client.name}</p>
           <p className="truncate text-sm text-slate-500">{client.email || 'No email'}</p>
@@ -857,9 +875,19 @@ function ClientRow({
         <span className="font-semibold">{money.format(billPerMonth)} BDT</span>
         <span className={`font-semibold ${previousDueAmount > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{money.format(previousDueAmount)} BDT</span>
         <span className="font-semibold">{money.format(totalBillAmount)} BDT</span>
-        <button className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50" onClick={() => setEditing((current) => !current)}>
-          <Edit2 size={15} /> Edit
-        </button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50" onClick={() => setEditing((current) => !current)}>
+            <Edit2 size={15} /> Edit
+          </button>
+          <button
+            className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={deleteClient}
+            disabled={deleting}
+          >
+            <Trash2 size={15} /> {deleting ? 'Deleting...' : 'Delete'}
+          </button>
+          {deleteNotice ? <p className="basis-full text-right text-sm font-medium text-red-700">{deleteNotice}</p> : null}
+        </div>
       </div>
       {editing ? (
         <div className="mt-4 grid gap-3 rounded-lg border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-2">
