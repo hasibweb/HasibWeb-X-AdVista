@@ -21,7 +21,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         clientId: id,
         domain: input.domain,
         serverLabel: input.serverLabel || null,
-        monthlyBill: input.monthlyBill,
+        monthlyBill: 0,
       },
     });
     return NextResponse.json({ site }, { status: 201 });

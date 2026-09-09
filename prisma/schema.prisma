@@ -41,6 +41,7 @@ model Client {
   whatsapp    String
   crmTemporaryPassword String?
   followUpStatus BillFollowUpStatus @default(pay_later)
+  monthlyBill Int           @default(0)
   clientType  String        @default("Normal")
   notes       String?
   isActive    Boolean       @default(true)

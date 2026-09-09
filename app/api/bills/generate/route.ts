@@ -15,12 +15,11 @@ export async function POST(request: Request) {
     const normalizedMonth = normalizeMonth(month);
     const clients = await prisma.client.findMany({
       where: { isActive: true },
-      include: { sites: { where: { isActive: true } } },
     });
 
     const bills = [];
     for (const client of clients) {
-      const totalAmount = client.sites.reduce((sum, site) => sum + site.monthlyBill, 0);
+      const totalAmount = client.monthlyBill;
       if (totalAmount <= 0) continue;
       const bill = await prisma.monthlyBill.upsert({
         where: { clientId_month: { clientId: client.id, month: normalizedMonth } },

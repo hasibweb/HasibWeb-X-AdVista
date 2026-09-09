@@ -17,6 +17,7 @@ const clientSchema = z.object({
   whatsapp: z.string().min(8),
   crmTemporaryPassword: z.string().optional().nullable(),
   followUpStatus: z.enum(['message_send', 'pay_later', 'partially_paid']).optional().default('pay_later'),
+  monthlyBill: z.coerce.number().int().min(0).optional().default(0),
   clientType: z.enum(['Normal', 'Agency']).optional().default('Normal'),
   notes: z.string().optional().nullable(),
   sites: z.array(siteSchema).default([]),
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
   });
 
   const clientsWithDue = clients.map((client) => {
-    const billPerMonth = client.sites.filter((site) => site.isActive).reduce((sum, site) => sum + site.monthlyBill, 0);
+    const billPerMonth = client.monthlyBill;
     const dueBills = client.bills
       .map((bill) => {
         const paid = paidAmount(bill.payments);
@@ -56,14 +57,15 @@ export async function GET(request: Request) {
         };
       })
       .filter((bill) => bill.dueAmount > 0);
+    const previousDueAmount = dueBills.filter((bill) => bill.month < month).reduce((sum, bill) => sum + bill.dueAmount, 0);
 
     return {
       ...client,
       bills: undefined,
       dueBills,
       billPerMonth,
-      previousDueAmount: dueBills.filter((bill) => bill.month < month).reduce((sum, bill) => sum + bill.dueAmount, 0),
-      totalBillAmount: billPerMonth + dueBills.filter((bill) => bill.month < month).reduce((sum, bill) => sum + bill.dueAmount, 0),
+      previousDueAmount,
+      totalBillAmount: billPerMonth + previousDueAmount,
       totalDueAmount: dueBills.reduce((sum, bill) => sum + bill.dueAmount, 0),
     };
   });
@@ -86,13 +88,14 @@ export async function POST(request: Request) {
         whatsapp: input.whatsapp,
         crmTemporaryPassword: input.crmTemporaryPassword || null,
         followUpStatus: input.followUpStatus,
+        monthlyBill: input.monthlyBill,
         clientType: input.clientType || 'Normal',
         notes: input.notes || null,
         sites: {
           create: input.sites.map((site) => ({
             domain: site.domain,
             serverLabel: site.serverLabel || null,
-            monthlyBill: site.monthlyBill,
+            monthlyBill: 0,
           })),
         },
       },

@@ -48,6 +48,7 @@ type Client = {
   email: string | null;
   whatsapp: string;
   followUpStatus: BillFollowUpStatus;
+  monthlyBill: number;
   clientType: string;
   crmTemporaryPassword: string | null;
   notes: string | null;
@@ -479,23 +480,23 @@ function ClientsPanel({
 }
 
 function AddClientModal({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged: () => void }) {
-  const [form, setForm] = useState({ name: '', email: '', whatsapp: '', crmTemporaryPassword: '', clientType: 'Normal', notes: '' });
-  const [domains, setDomains] = useState([{ domain: '', serverLabel: '', monthlyBill: '' }]);
+  const [form, setForm] = useState({ name: '', email: '', whatsapp: '', crmTemporaryPassword: '', monthlyBill: '', clientType: 'Normal', notes: '' });
+  const [domains, setDomains] = useState([{ domain: '', serverLabel: '' }]);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
 
   function resetForm() {
-    setForm({ name: '', email: '', whatsapp: '', crmTemporaryPassword: '', clientType: 'Normal', notes: '' });
-    setDomains([{ domain: '', serverLabel: '', monthlyBill: '' }]);
+    setForm({ name: '', email: '', whatsapp: '', crmTemporaryPassword: '', monthlyBill: '', clientType: 'Normal', notes: '' });
+    setDomains([{ domain: '', serverLabel: '' }]);
     setNotice('');
   }
 
-  function updateDomain(index: number, key: 'domain' | 'serverLabel' | 'monthlyBill', value: string) {
+  function updateDomain(index: number, key: 'domain' | 'serverLabel', value: string) {
     setDomains((current) => current.map((domain, currentIndex) => (currentIndex === index ? { ...domain, [key]: value } : domain)));
   }
 
   function addDomainInput() {
-    setDomains((current) => [...current, { domain: '', serverLabel: '', monthlyBill: '' }]);
+    setDomains((current) => [...current, { domain: '', serverLabel: '' }]);
   }
 
   function removeDomainInput(index: number) {
@@ -512,7 +513,6 @@ function AddClientModal({ open, onClose, onChanged }: { open: boolean; onClose: 
         .map((domain) => ({
           domain: domain.domain.trim(),
           serverLabel: domain.serverLabel.trim(),
-          monthlyBill: Number(domain.monthlyBill || 0),
         }));
 
       await api('/api/clients', {
@@ -522,6 +522,7 @@ function AddClientModal({ open, onClose, onChanged }: { open: boolean; onClose: 
           email: form.email,
           whatsapp: form.whatsapp,
           crmTemporaryPassword: form.crmTemporaryPassword,
+          monthlyBill: Number(form.monthlyBill || 0),
           clientType: form.clientType,
           notes: form.notes,
           sites,
@@ -555,6 +556,7 @@ function AddClientModal({ open, onClose, onChanged }: { open: boolean; onClose: 
             ['email', 'Email'],
             ['whatsapp', 'WhatsApp'],
             ['crmTemporaryPassword', 'CRM Temporary Password'],
+            ['monthlyBill', 'Bill Per Month'],
           ].map(([key, label]) => (
             <label key={key} className="block min-w-0">
               <span className="text-sm font-medium text-slate-700">{label}</span>
@@ -563,6 +565,7 @@ function AddClientModal({ open, onClose, onChanged }: { open: boolean; onClose: 
                 value={form[key as keyof typeof form]}
                 onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
                 required={['name', 'whatsapp'].includes(key)}
+                inputMode={key === 'monthlyBill' ? 'numeric' : undefined}
               />
             </label>
           ))}
@@ -596,19 +599,12 @@ function AddClientModal({ open, onClose, onChanged }: { open: boolean; onClose: 
                     value={domain.domain}
                     onChange={(event) => updateDomain(index, 'domain', event.target.value)}
                   />
-                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px] gap-2">
+                  <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_40px] gap-2">
                     <input
                       className="focus-ring block w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm"
                       placeholder="Server"
                       value={domain.serverLabel}
                       onChange={(event) => updateDomain(index, 'serverLabel', event.target.value)}
-                    />
-                    <input
-                      className="focus-ring block w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Amount"
-                      value={domain.monthlyBill}
-                      onChange={(event) => updateDomain(index, 'monthlyBill', event.target.value)}
-                      inputMode="numeric"
                     />
                     <button
                       type="button"
@@ -623,7 +619,6 @@ function AddClientModal({ open, onClose, onChanged }: { open: boolean; onClose: 
                 </div>
               ))}
             </div>
-            <p className="mt-2 text-xs text-slate-500">Leave amount blank to keep the client total unchanged.</p>
           </div>
           <label className="block min-w-0">
             <span className="text-sm font-medium text-slate-700">Notes</span>
@@ -661,7 +656,6 @@ function ClientRow({
   const defaultDueMonth = month < currentMonth ? month : previousMonthValue(currentMonth);
   const maxManualDueMonth = previousMonthValue(currentMonth);
   const [domain, setDomain] = useState('');
-  const [monthlyBill, setMonthlyBill] = useState('');
   const [serverLabel, setServerLabel] = useState('');
   const [dueForm, setDueForm] = useState({ month: defaultDueMonth, amount: '', note: '' });
   const [dueNotice, setDueNotice] = useState('');
@@ -676,6 +670,7 @@ function ClientRow({
     whatsapp: client.whatsapp,
     clientType: client.clientType,
     crmTemporaryPassword: client.crmTemporaryPassword || '',
+    monthlyBill: String(client.monthlyBill || 0),
     notes: client.notes || '',
     isActive: client.isActive,
   });
@@ -684,15 +679,14 @@ function ClientRow({
       id: site.id,
       domain: site.domain,
       serverLabel: site.serverLabel || '',
-      monthlyBill: String(site.monthlyBill),
       isActive: site.isActive,
     })),
   );
   const [deletedSiteIds, setDeletedSiteIds] = useState<string[]>([]);
   const dueBills = client.dueBills || [];
-  const totalDueAmount = client.totalDueAmount || 0;
-  const billPerMonth = client.billPerMonth ?? client.sites.filter((site) => site.isActive).reduce((sum, site) => sum + site.monthlyBill, 0);
-  const previousDueAmount = client.previousDueAmount ?? dueBills.filter((bill) => bill.month < month).reduce((sum, bill) => sum + bill.dueAmount, 0);
+  const previousDueBills = dueBills.filter((bill) => bill.month < month);
+  const billPerMonth = client.billPerMonth ?? client.monthlyBill;
+  const previousDueAmount = client.previousDueAmount ?? previousDueBills.reduce((sum, bill) => sum + bill.dueAmount, 0);
   const totalBillAmount = client.totalBillAmount ?? billPerMonth + previousDueAmount;
 
   useEffect(() => {
@@ -702,6 +696,7 @@ function ClientRow({
       whatsapp: client.whatsapp,
       clientType: client.clientType,
       crmTemporaryPassword: client.crmTemporaryPassword || '',
+      monthlyBill: String(client.monthlyBill || 0),
       notes: client.notes || '',
       isActive: client.isActive,
     });
@@ -710,7 +705,6 @@ function ClientRow({
         id: site.id,
         domain: site.domain,
         serverLabel: site.serverLabel || '',
-        monthlyBill: String(site.monthlyBill),
         isActive: site.isActive,
       })),
     );
@@ -722,7 +716,7 @@ function ClientRow({
     setDueForm((current) => ({ ...current, month: defaultDueMonth }));
   }, [defaultDueMonth]);
 
-  function updateEditSite(index: number, key: 'domain' | 'serverLabel' | 'monthlyBill' | 'isActive', value: string | boolean) {
+  function updateEditSite(index: number, key: 'domain' | 'serverLabel' | 'isActive', value: string | boolean) {
     setEditSites((current) => current.map((site, currentIndex) => (currentIndex === index ? { ...site, [key]: value } : site)));
   }
 
@@ -735,11 +729,10 @@ function ClientRow({
     event.preventDefault();
     await api(`/api/clients/${client.id}/sites`, {
       method: 'POST',
-      body: JSON.stringify({ domain, serverLabel, monthlyBill: Number(monthlyBill || 0) }),
+      body: JSON.stringify({ domain, serverLabel }),
     });
     setDomain('');
     setServerLabel('');
-    setMonthlyBill('');
     onChanged();
   }
 
@@ -755,7 +748,6 @@ function ClientRow({
           body: JSON.stringify({
             domain: site.domain,
             serverLabel: site.serverLabel,
-            monthlyBill: Number(site.monthlyBill || 0),
             isActive: site.isActive,
           }),
         }),
@@ -842,38 +834,33 @@ function ClientRow({
                   className={`rounded-full px-2 py-1 text-xs font-semibold ${site.isActive ? 'bg-white text-slate-700 shadow-sm' : 'bg-red-50 text-red-700'}`}
                   title={site.isActive ? 'Active site' : 'Inactive site'}
                 >
-                  {site.domain} - {money.format(site.monthlyBill)}
+                  {site.domain}
                 </span>
               ))}
               {!client.sites.length ? <span className="text-xs font-medium text-slate-500">No sites added yet.</span> : null}
             </div>
           ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {dueBills.length ? (
-              <>
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
-                  Total due {money.format(totalDueAmount)} BDT
-                </span>
-                {dueBills.map((bill) => (
-                  <button
-                    key={bill.id}
-                    type="button"
-                    className="focus-ring rounded-full border border-amber-200 bg-white px-2 py-1 text-xs font-semibold text-amber-800 shadow-sm hover:bg-amber-50"
-                    onClick={() => onOpenBillsMonth(bill.month)}
-                    title={`Open Bills for ${monthLabel(bill.month)}`}
-                  >
-                    {monthLabel(bill.month)} - {money.format(bill.dueAmount)}
-                  </button>
-                ))}
-              </>
-            ) : (
-              <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">No due bills</span>
-            )}
-          </div>
         </div>
         <span className="text-sm text-slate-700">{client.whatsapp}</span>
         <span className="font-semibold">{money.format(billPerMonth)} BDT</span>
-        <span className={`font-semibold ${previousDueAmount > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{money.format(previousDueAmount)} BDT</span>
+        <span>
+          <span className={`block font-semibold ${previousDueAmount > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{money.format(previousDueAmount)} BDT</span>
+          {previousDueBills.length ? (
+            <span className="mt-2 flex flex-wrap gap-2">
+              {previousDueBills.map((bill) => (
+                <button
+                  key={bill.id}
+                  type="button"
+                  className="focus-ring rounded-full border border-amber-200 bg-white px-2 py-1 text-xs font-semibold text-amber-800 shadow-sm hover:bg-amber-50"
+                  onClick={() => onOpenBillsMonth(bill.month)}
+                  title={`Open Bills for ${monthLabel(bill.month)}`}
+                >
+                  {monthLabel(bill.month)} - {money.format(bill.dueAmount)}
+                </button>
+              ))}
+            </span>
+          ) : null}
+        </span>
         <span className="font-semibold">{money.format(totalBillAmount)} BDT</span>
         <div className="flex flex-wrap justify-end gap-2">
           <button className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50" onClick={() => setEditing((current) => !current)}>
@@ -895,6 +882,7 @@ function ClientRow({
           <input className="focus-ring rounded-md border border-slate-300 px-3 py-2 text-sm" value={editForm.email} onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" />
           <input className="focus-ring rounded-md border border-slate-300 px-3 py-2 text-sm" value={editForm.whatsapp} onChange={(event) => setEditForm((current) => ({ ...current, whatsapp: event.target.value }))} required />
           <input className="focus-ring rounded-md border border-slate-300 px-3 py-2 text-sm" value={editForm.crmTemporaryPassword} onChange={(event) => setEditForm((current) => ({ ...current, crmTemporaryPassword: event.target.value }))} placeholder="CRM Temporary Password" />
+          <input className="focus-ring rounded-md border border-slate-300 px-3 py-2 text-sm" value={editForm.monthlyBill} onChange={(event) => setEditForm((current) => ({ ...current, monthlyBill: event.target.value }))} placeholder="Bill Per Month" inputMode="numeric" />
           <select className="focus-ring rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" value={editForm.clientType} onChange={(event) => setEditForm((current) => ({ ...current, clientType: event.target.value }))}>
             {clientTypes.map((type) => (
               <option key={type} value={type}>
@@ -906,11 +894,10 @@ function ClientRow({
           <div className="md:col-span-2">
             <div className="mb-2 flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-800">Existing domains</span>
-              <span className="text-xs text-slate-500">Blank amount saves as 0</span>
             </div>
             <div className="space-y-2">
               {editSites.map((site, index) => (
-                <div key={site.id} className="grid min-w-0 gap-2 rounded-md border border-emerald-100 bg-white p-2 shadow-sm lg:grid-cols-[minmax(0,1fr)_130px_130px_96px_44px]">
+                <div key={site.id} className="grid min-w-0 gap-2 rounded-md border border-emerald-100 bg-white p-2 shadow-sm lg:grid-cols-[minmax(0,1fr)_150px_96px_44px]">
                   <input
                     className="focus-ring block w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm"
                     value={site.domain}
@@ -923,13 +910,6 @@ function ClientRow({
                     value={site.serverLabel}
                     onChange={(event) => updateEditSite(index, 'serverLabel', event.target.value)}
                     placeholder="Server"
-                  />
-                  <input
-                    className="focus-ring block w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    value={site.monthlyBill}
-                    onChange={(event) => updateEditSite(index, 'monthlyBill', event.target.value)}
-                    placeholder="Amount"
-                    inputMode="numeric"
                   />
                   <label className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold text-slate-700">
                     <input type="checkbox" checked={site.isActive} onChange={(event) => updateEditSite(index, 'isActive', event.target.checked)} />
@@ -952,12 +932,10 @@ function ClientRow({
           <form onSubmit={addSite} className="md:col-span-2">
             <div className="mb-2 flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-800">Add site</span>
-              <span className="text-xs text-slate-500">Amount is optional</span>
             </div>
-            <div className="grid min-w-0 gap-2 rounded-md border border-slate-200 bg-white p-2 shadow-sm lg:grid-cols-[minmax(0,1fr)_140px_150px_104px]">
+            <div className="grid min-w-0 gap-2 rounded-md border border-slate-200 bg-white p-2 shadow-sm lg:grid-cols-[minmax(0,1fr)_160px_104px]">
               <input className="focus-ring block w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="domain.com" value={domain} onChange={(event) => setDomain(event.target.value)} required />
               <input className="focus-ring block w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Server" value={serverLabel} onChange={(event) => setServerLabel(event.target.value)} />
-              <input className="focus-ring block w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Amount optional" value={monthlyBill} onChange={(event) => setMonthlyBill(event.target.value)} inputMode="numeric" />
               <button className="focus-ring rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50">Add site</button>
             </div>
           </form>

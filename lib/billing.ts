@@ -39,7 +39,7 @@ export function buildTemplateContext(
 ) {
   const paid = paidAmount(bill.payments);
   const activeSites = bill.client.sites.filter((site) => site.isActive);
-  const billPerMonth = activeSites.reduce((sum, site) => sum + site.monthlyBill, 0);
+  const billPerMonth = bill.client.monthlyBill;
   const previousDueAmount = Math.max(settings.previousDueAmount ?? bill.totalAmount - paid, 0);
   const valueOrFallback = (value?: string | null) => value?.trim() || 'N/A';
 
