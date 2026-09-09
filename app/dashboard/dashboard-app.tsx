@@ -461,9 +461,9 @@ function ClientsPanel({
     <>
       <AddClientModal open={addClientOpen} onClose={onAddClientClose} onChanged={onChanged} />
       <div className={`${cardClass} min-w-0 overflow-hidden`}>
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_140px_140px_190px] gap-3 border-b border-slate-200 px-5 py-4 text-sm font-semibold text-slate-600">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_170px_140px_140px_140px_170px] gap-3 border-b border-slate-200 px-5 py-4 text-sm font-semibold text-slate-600">
           <span>Client</span>
-          <span>WhatsApp</span>
+          <span>Contact</span>
           <span>Bill Per Month</span>
           <span>Previous Due</span>
           <span>Total Bill</span>
@@ -662,6 +662,8 @@ function ClientRow({
   const [dueSaving, setDueSaving] = useState(false);
   const [deleteNotice, setDeleteNotice] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [editing, setEditing] = useState(false);
   const [sitesExpanded, setSitesExpanded] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -759,13 +761,12 @@ function ClientRow({
   }
 
   async function deleteClient() {
-    const confirmed = window.confirm(`Delete ${client.name}? This will also remove this client's sites, bills, payments, and messages.`);
-    if (!confirmed) return;
-
     setDeleting(true);
     setDeleteNotice('');
     try {
       await api(`/api/clients/${client.id}`, { method: 'DELETE' });
+      setDeleteConfirmOpen(false);
+      setDeleteConfirmName('');
       onChanged();
     } catch (error) {
       setDeleteNotice(error instanceof Error ? error.message : 'Client could not be deleted.');
@@ -810,11 +811,11 @@ function ClientRow({
   }
 
   return (
+    <>
     <div className="px-5 py-4">
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_140px_140px_190px] gap-3">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_170px_140px_140px_140px_170px] gap-3">
         <div className="min-w-0">
           <p className="truncate font-semibold">{client.name}</p>
-          <p className="truncate text-sm text-slate-500">{client.email || 'No email'}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
@@ -841,7 +842,10 @@ function ClientRow({
             </div>
           ) : null}
         </div>
-        <span className="text-sm text-slate-700">{client.whatsapp}</span>
+        <span className="min-w-0 text-sm text-slate-700">
+          <span className="block truncate">{client.whatsapp}</span>
+          <span className="mt-1 block truncate text-slate-500">{client.email || 'No email'}</span>
+        </span>
         <span className="font-semibold">{money.format(billPerMonth)} BDT</span>
         <span>
           <span className={`block font-semibold ${previousDueAmount > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{money.format(previousDueAmount)} BDT</span>
@@ -867,11 +871,17 @@ function ClientRow({
             <Edit2 size={15} /> Edit
           </button>
           <button
-            className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={deleteClient}
+            className="focus-ring inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => {
+              setDeleteNotice('');
+              setDeleteConfirmName('');
+              setDeleteConfirmOpen(true);
+            }}
             disabled={deleting}
+            title="Delete client"
+            aria-label={`Delete ${client.name}`}
           >
-            <Trash2 size={15} /> {deleting ? 'Deleting...' : 'Delete'}
+            <Trash2 size={15} className={deleting ? 'animate-pulse' : ''} />
           </button>
           {deleteNotice ? <p className="basis-full text-right text-sm font-medium text-red-700">{deleteNotice}</p> : null}
         </div>
@@ -985,6 +995,77 @@ function ClientRow({
         </div>
       ) : null}
     </div>
+    {deleteConfirmOpen
+      ? createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/45 p-4">
+            <button
+              className="absolute inset-0 cursor-default"
+              onClick={() => {
+                if (deleting) return;
+                setDeleteConfirmOpen(false);
+                setDeleteConfirmName('');
+                setDeleteNotice('');
+              }}
+              aria-label="Close delete client confirmation"
+            />
+            <div className={`${cardClass} relative w-full max-w-md p-5 shadow-2xl`}>
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">Delete {client.name}?</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">This will also remove this client&apos;s sites, bills, payments, and messages.</p>
+                </div>
+                <button
+                  type="button"
+                  className="focus-ring rounded-md border border-slate-300 p-2 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    setDeleteConfirmName('');
+                    setDeleteNotice('');
+                  }}
+                  disabled={deleting}
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Type client name to confirm</span>
+                <input
+                  className="focus-ring mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
+                  value={deleteConfirmName}
+                  onChange={(event) => setDeleteConfirmName(event.target.value)}
+                  autoFocus
+                />
+              </label>
+              {deleteNotice ? <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{deleteNotice}</p> : null}
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="focus-ring inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    setDeleteConfirmName('');
+                    setDeleteNotice('');
+                  }}
+                  disabled={deleting}
+                >
+                  <X size={16} /> Cancel
+                </button>
+                <button
+                  type="button"
+                  className="focus-ring inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={deleteClient}
+                  disabled={deleting || deleteConfirmName !== client.name}
+                >
+                  <Trash2 size={16} /> {deleting ? 'Deleting...' : 'Delete client'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null}
+    </>
   );
 }
 
