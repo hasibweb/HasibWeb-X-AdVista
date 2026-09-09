@@ -118,6 +118,7 @@ const tabs = [
   { id: 'bills', label: 'Bills', icon: CreditCard },
   { id: 'templates', label: 'Templates', icon: FileText },
   { id: 'messages', label: 'Messages', icon: MessageSquareText },
+  { id: 'delivered', label: 'Delivered Messages', icon: CheckCircle2 },
   { id: 'settings', label: 'Settings', icon: Settings },
 ] as const;
 
@@ -354,8 +355,9 @@ export default function DashboardApp() {
           {tab === 'bills' ? <BillsPanel bills={dueBills} month={month} onChanged={refresh} /> : null}
           {tab === 'templates' ? <TemplatesPanel templates={templates} onChanged={refresh} /> : null}
           {tab === 'messages' ? (
-            <MessagesPanel messages={messages} templates={templates} clients={clients} month={month} reminderTemplateId={reminderTemplate?.id} onChanged={refresh} />
+            <MessagesPanel messages={messages.filter((message) => message.status !== 'sent')} templates={templates} clients={clients} month={month} reminderTemplateId={reminderTemplate?.id} onChanged={refresh} />
           ) : null}
+          {tab === 'delivered' ? <DeliveredMessagesPanel messages={messages.filter((message) => message.status === 'sent')} onChanged={refresh} /> : null}
           {tab === 'settings' ? <SettingsPanel /> : null}
         </div>
       </section>
@@ -1825,6 +1827,7 @@ function MessagesPanel({
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
+  const [sendingSelected, setSendingSelected] = useState(false);
   const selectedIds = messages.filter((message) => message.selected && message.status !== 'sent').map((message) => message.id);
   const typedTemplates = templates.filter((template) => template.type === messageType || messageType === 'general');
   const activeClients = clients.filter((client) => client.isActive);
@@ -1856,33 +1859,43 @@ function MessagesPanel({
   }
 
   async function sendSelected() {
-    await api('/api/messages/send', { method: 'POST', body: JSON.stringify({ messageIds: selectedIds }) });
-    onChanged();
+    if (!selectedIds.length) return;
+
+    setSendingSelected(true);
+    setNotice('');
+    try {
+      await api('/api/messages/send', { method: 'POST', body: JSON.stringify({ messageIds: selectedIds }) });
+      await Promise.resolve(onChanged());
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Selected messages could not be sent.');
+    } finally {
+      setSendingSelected(false);
+    }
   }
 
   return (
     <div className="space-y-4">
       <div className={`${cardClass} flex flex-wrap gap-2 p-4`}>
-        <button className="focus-ring inline-flex items-center gap-2 rounded-md border border-slate-300 px-4 py-2 font-semibold hover:bg-slate-50" onClick={() => setClientPickerOpen(true)}>
+        <button className="focus-ring inline-flex items-center gap-2 rounded-md border border-slate-300 px-4 py-2 font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60" onClick={() => setClientPickerOpen(true)} disabled={sendingSelected}>
           <Users size={18} /> {selectedClientIds.length ? `Selected Clients (${selectedClientIds.length})` : 'Select Clients'}
         </button>
-        <select className="focus-ring rounded-md border border-slate-300 px-3 py-2" value={messageType} onChange={(event) => setMessageType(event.target.value as Template['type'])}>
+        <select className="focus-ring rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60" value={messageType} onChange={(event) => setMessageType(event.target.value as Template['type'])} disabled={sendingSelected}>
           {templateTypeOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
         </select>
-        <select className="focus-ring min-w-[260px] rounded-md border border-slate-300 px-3 py-2" value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+        <select className="focus-ring min-w-[260px] rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-60" value={templateId} onChange={(event) => setTemplateId(event.target.value)} disabled={sendingSelected}>
           {typedTemplates.map((template) => (
             <option key={template.id} value={template.id}>{template.name}</option>
           ))}
         </select>
-        <button className="focus-ring inline-flex items-center gap-2 rounded-md border border-slate-300 px-4 py-2 font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60" onClick={generate} disabled={!templateId || !selectedClientIds.length}>
+        <button className="focus-ring inline-flex items-center gap-2 rounded-md border border-slate-300 px-4 py-2 font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60" onClick={generate} disabled={!templateId || !selectedClientIds.length || sendingSelected}>
           <FileText size={18} /> Generate drafts
         </button>
-        <button className="focus-ring inline-flex items-center gap-2 rounded-md bg-forest px-4 py-2 font-semibold text-white disabled:opacity-60" onClick={sendSelected} disabled={!selectedIds.length}>
-          <Send size={18} /> Send selected
+        <button className="focus-ring inline-flex items-center gap-2 rounded-md bg-forest px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" onClick={sendSelected} disabled={!selectedIds.length || sendingSelected}>
+          {sendingSelected ? <RefreshCw size={18} className="animate-spin" /> : <Send size={18} />} {sendingSelected ? 'Sending...' : 'Send selected'}
         </button>
       </div>
       <ClientPickerSidebar
@@ -1895,7 +1908,7 @@ function MessagesPanel({
       {notice ? <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">{notice}</p> : null}
       <div className="space-y-3">
         {messages.map((message) => (
-          <MessageCard key={message.id} message={message} onChanged={onChanged} />
+          <MessageCard key={message.id} message={message} onChanged={onChanged} selectionDisabled={sendingSelected} />
         ))}
         {!messages.length ? <p className={`${cardClass} p-6 text-sm text-slate-500`}>No message drafts for this month.</p> : null}
       </div>
@@ -2007,11 +2020,36 @@ function ClientPickerSidebar({
   );
 }
 
-function MessageCard({ message, onChanged }: { message: WaMessage; onChanged: () => void }) {
+function DeliveredMessagesPanel({ messages, onChanged }: { messages: WaMessage[]; onChanged: () => void }) {
+  return (
+    <div className="space-y-3">
+      {messages.map((message) => (
+        <MessageCard key={message.id} message={message} onChanged={onChanged} readOnly showSentAt />
+      ))}
+      {!messages.length ? <p className={`${cardClass} p-6 text-sm text-slate-500`}>No delivered messages for this month.</p> : null}
+    </div>
+  );
+}
+
+function MessageCard({
+  message,
+  onChanged,
+  selectionDisabled = false,
+  readOnly = false,
+  showSentAt = false,
+}: {
+  message: WaMessage;
+  onChanged: () => void;
+  selectionDisabled?: boolean;
+  readOnly?: boolean;
+  showSentAt?: boolean;
+}) {
   const [body, setBody] = useState(message.body);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState('');
   const canDelete = message.status === 'draft' || message.status === 'failed';
+  const isReadOnly = readOnly || message.status === 'sent';
+  const sentLabel = showSentAt && message.sentAt ? new Date(message.sentAt).toLocaleString() : '';
 
   async function save() {
     await api(`/api/messages/${message.id}`, { method: 'PATCH', body: JSON.stringify({ body }) });
@@ -2040,19 +2078,27 @@ function MessageCard({ message, onChanged }: { message: WaMessage; onChanged: ()
         <div>
           <p className="font-semibold">{message.client.name}</p>
           <p className="text-sm text-slate-500">{message.chatId}</p>
+          {sentLabel ? <p className="text-xs font-medium text-emerald-700">Sent {sentLabel}</p> : null}
         </div>
         <div className="flex items-center gap-2">
-          <label className="inline-flex items-center gap-2 text-sm font-medium">
-            <input type="checkbox" checked={message.selected} onChange={(event) => api(`/api/messages/${message.id}`, { method: 'PATCH', body: JSON.stringify({ selected: event.target.checked }) }).then(onChanged)} />
-            Select
-          </label>
+          {!isReadOnly ? (
+            <label className="inline-flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={message.selected}
+                onChange={(event) => api(`/api/messages/${message.id}`, { method: 'PATCH', body: JSON.stringify({ selected: event.target.checked }) }).then(onChanged)}
+                disabled={selectionDisabled}
+              />
+              Select
+            </label>
+          ) : null}
           <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(message.status)}`}>{message.status}</span>
         </div>
       </div>
-      <textarea className="focus-ring h-36 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={body} onChange={(event) => setBody(event.target.value)} disabled={message.status === 'sent'} />
+      <textarea className="focus-ring h-36 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={body} onChange={(event) => setBody(event.target.value)} disabled={isReadOnly} />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
-          <button className="focus-ring rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60" onClick={save} disabled={message.status === 'sent'}>Save draft</button>
+          {!isReadOnly ? <button className="focus-ring rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60" onClick={save}>Save draft</button> : null}
           {canDelete ? (
             <button
               className="focus-ring inline-flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
