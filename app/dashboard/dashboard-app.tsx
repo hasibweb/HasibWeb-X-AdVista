@@ -55,6 +55,9 @@ type Client = {
   sites: Site[];
   dueBills?: ClientDueBill[];
   totalDueAmount?: number;
+  billPerMonth?: number;
+  previousDueAmount?: number;
+  totalBillAmount?: number;
 };
 
 const clientTypes = ['Normal', 'Agency'] as const;
@@ -213,6 +216,7 @@ export default function DashboardApp() {
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [addClientOpen, setAddClientOpen] = useState(false);
 
   const reminderTemplate = templates.find((template) => template.type === 'reminder');
 
@@ -234,7 +238,7 @@ export default function DashboardApp() {
     setNotice('');
     try {
       const [clientData, billData, dueBillData, templateData, messageData] = await Promise.all([
-        api<{ clients: Client[] }>('/api/clients'),
+        api<{ clients: Client[] }>(`/api/clients?month=${month}`),
         api<{ bills: Bill[] }>(`/api/bills?month=${month}`),
         api<{ bills: Bill[] }>('/api/bills?scope=due'),
         api<{ templates: Template[] }>('/api/templates'),
@@ -317,6 +321,11 @@ export default function DashboardApp() {
             <p className="truncate text-sm text-slate-500">Client billing and WhatsApp reminders</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {tab === 'clients' ? (
+              <button className="focus-ring inline-flex items-center gap-2 rounded-md bg-forest px-4 py-2 font-semibold text-white hover:bg-ink" onClick={() => setAddClientOpen(true)}>
+                <Plus size={18} /> Add client
+              </button>
+            ) : null}
             <MonthPicker value={month} onChange={setMonth} className="w-[252px]" ariaLabel="Select dashboard month" />
             <button className="focus-ring rounded-md border border-slate-300 p-2 hover:bg-slate-50" onClick={refresh} title="Refresh">
               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
@@ -336,6 +345,8 @@ export default function DashboardApp() {
                 setMonth(selectedMonth);
                 selectTab('bills');
               }}
+              addClientOpen={addClientOpen}
+              onAddClientClose={() => setAddClientOpen(false)}
               onChanged={refresh}
             />
           ) : null}
@@ -433,16 +444,51 @@ function ClientsPanel({
   month,
   onMonthChange,
   onOpenBillsMonth,
+  addClientOpen,
+  onAddClientClose,
   onChanged,
 }: {
   clients: Client[];
   month: string;
   onMonthChange: (month: string) => void;
   onOpenBillsMonth: (month: string) => void;
+  addClientOpen: boolean;
+  onAddClientClose: () => void;
   onChanged: () => void;
 }) {
+  return (
+    <>
+      <AddClientModal open={addClientOpen} onClose={onAddClientClose} onChanged={onChanged} />
+      <div className={`${cardClass} min-w-0 overflow-hidden`}>
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_140px_140px_88px] gap-3 border-b border-slate-200 px-5 py-4 text-sm font-semibold text-slate-600">
+          <span>Client</span>
+          <span>WhatsApp</span>
+          <span>Bill Per Month</span>
+          <span>Previous Due</span>
+          <span>Total Bill</span>
+          <span>Action</span>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {clients.map((client) => (
+            <ClientRow key={client.id} client={client} month={month} onMonthChange={onMonthChange} onOpenBillsMonth={onOpenBillsMonth} onChanged={onChanged} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AddClientModal({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged: () => void }) {
   const [form, setForm] = useState({ name: '', email: '', whatsapp: '', crmTemporaryPassword: '', clientType: 'Normal', notes: '' });
   const [domains, setDomains] = useState([{ domain: '', serverLabel: '', monthlyBill: '' }]);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  function resetForm() {
+    setForm({ name: '', email: '', whatsapp: '', crmTemporaryPassword: '', clientType: 'Normal', notes: '' });
+    setDomains([{ domain: '', serverLabel: '', monthlyBill: '' }]);
+    setNotice('');
+  }
 
   function updateDomain(index: number, key: 'domain' | 'serverLabel' | 'monthlyBill', value: string) {
     setDomains((current) => current.map((domain, currentIndex) => (currentIndex === index ? { ...domain, [key]: value } : domain)));
@@ -458,35 +504,51 @@ function ClientsPanel({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const sites = domains
-      .filter((domain) => domain.domain.trim())
-      .map((domain) => ({
-        domain: domain.domain.trim(),
-        serverLabel: domain.serverLabel.trim(),
-        monthlyBill: Number(domain.monthlyBill || 0),
-      }));
+    setSaving(true);
+    setNotice('');
+    try {
+      const sites = domains
+        .filter((domain) => domain.domain.trim())
+        .map((domain) => ({
+          domain: domain.domain.trim(),
+          serverLabel: domain.serverLabel.trim(),
+          monthlyBill: Number(domain.monthlyBill || 0),
+        }));
 
-    await api('/api/clients', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: form.name,
-        email: form.email,
-        whatsapp: form.whatsapp,
-        crmTemporaryPassword: form.crmTemporaryPassword,
-        clientType: form.clientType,
-        notes: form.notes,
-        sites,
-      }),
-    });
-    setForm({ name: '', email: '', whatsapp: '', crmTemporaryPassword: '', clientType: 'Normal', notes: '' });
-    setDomains([{ domain: '', serverLabel: '', monthlyBill: '' }]);
-    onChanged();
+      await api('/api/clients', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          whatsapp: form.whatsapp,
+          crmTemporaryPassword: form.crmTemporaryPassword,
+          clientType: form.clientType,
+          notes: form.notes,
+          sites,
+        }),
+      });
+      resetForm();
+      onClose();
+      onChanged();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Client could not be created.');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  return (
-    <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
-      <form onSubmit={submit} className={`${cardClass} min-w-0 overflow-hidden p-5`}>
-        <h2 className="mb-4 text-lg font-semibold">Add client</h2>
+  if (!open) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/45 p-4">
+      <button className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Close add client modal" />
+      <form onSubmit={submit} className={`${cardClass} dashboard-scroll relative max-h-[calc(100vh-48px)] w-full max-w-2xl overflow-y-auto p-5 shadow-2xl`}>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Add client</h2>
+          <button type="button" className="focus-ring rounded-md border border-slate-300 p-2 hover:bg-slate-50" onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
+        </div>
         <div className="grid gap-3">
           {[
             ['name', 'Client name'],
@@ -567,25 +629,19 @@ function ClientsPanel({
             <span className="text-sm font-medium text-slate-700">Notes</span>
             <textarea className="focus-ring mt-1 block w-full min-w-0 rounded-md border border-slate-300 px-3 py-2" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
           </label>
-          <button className="focus-ring inline-flex items-center justify-center gap-2 rounded-md bg-forest px-4 py-2 font-semibold text-white">
-            <Plus size={18} /> Add client
-          </button>
+          {notice ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{notice}</p> : null}
+          <div className="flex justify-end gap-2">
+            <button type="button" className="focus-ring inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 font-semibold hover:bg-slate-50" onClick={onClose}>
+              <X size={16} /> Cancel
+            </button>
+            <button className="focus-ring inline-flex items-center justify-center gap-2 rounded-md bg-forest px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={saving}>
+              <Plus size={18} /> {saving ? 'Saving...' : 'Add client'}
+            </button>
+          </div>
         </div>
       </form>
-      <div className={`${cardClass} min-w-0 overflow-hidden`}>
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_88px] gap-3 border-b border-slate-200 px-5 py-4 text-sm font-semibold text-slate-600">
-          <span>Client</span>
-          <span>WhatsApp</span>
-          <span>Monthly / Due</span>
-          <span>Action</span>
-        </div>
-        <div className="divide-y divide-slate-100">
-          {clients.map((client) => (
-            <ClientRow key={client.id} client={client} month={month} onMonthChange={onMonthChange} onOpenBillsMonth={onOpenBillsMonth} onChanged={onChanged} />
-          ))}
-        </div>
-      </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -631,9 +687,11 @@ function ClientRow({
     })),
   );
   const [deletedSiteIds, setDeletedSiteIds] = useState<string[]>([]);
-  const total = client.sites.filter((site) => site.isActive).reduce((sum, site) => sum + site.monthlyBill, 0);
   const dueBills = client.dueBills || [];
   const totalDueAmount = client.totalDueAmount || 0;
+  const billPerMonth = client.billPerMonth ?? client.sites.filter((site) => site.isActive).reduce((sum, site) => sum + site.monthlyBill, 0);
+  const previousDueAmount = client.previousDueAmount ?? dueBills.filter((bill) => bill.month < month).reduce((sum, bill) => sum + bill.dueAmount, 0);
+  const totalBillAmount = client.totalBillAmount ?? billPerMonth + previousDueAmount;
 
   useEffect(() => {
     setEditForm({
@@ -743,7 +801,7 @@ function ClientRow({
 
   return (
     <div className="px-5 py-4">
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_88px] gap-3">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_150px_140px_140px_140px_88px] gap-3">
         <div className="min-w-0">
           <p className="truncate font-semibold">{client.name}</p>
           <p className="truncate text-sm text-slate-500">{client.email || 'No email'}</p>
@@ -796,12 +854,9 @@ function ClientRow({
           </div>
         </div>
         <span className="text-sm text-slate-700">{client.whatsapp}</span>
-        <span>
-          <span className="block font-semibold">{money.format(total)} BDT</span>
-          <span className={`mt-1 block text-xs font-semibold ${totalDueAmount > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-            Due {money.format(totalDueAmount)} BDT
-          </span>
-        </span>
+        <span className="font-semibold">{money.format(billPerMonth)} BDT</span>
+        <span className={`font-semibold ${previousDueAmount > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{money.format(previousDueAmount)} BDT</span>
+        <span className="font-semibold">{money.format(totalBillAmount)} BDT</span>
         <button className="focus-ring inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50" onClick={() => setEditing((current) => !current)}>
           <Edit2 size={15} /> Edit
         </button>

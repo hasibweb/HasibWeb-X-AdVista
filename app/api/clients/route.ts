@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { jsonError, requireAdmin } from '@/lib/api';
-import { paidAmount } from '@/lib/billing';
+import { normalizeMonth, paidAmount } from '@/lib/billing';
 import { prisma } from '@/lib/db';
 import { toChatId } from '@/lib/whatsapp';
 
@@ -22,10 +22,12 @@ const clientSchema = z.object({
   sites: z.array(siteSchema).default([]),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const auth = await requireAdmin();
   if (auth) return auth;
 
+  const url = new URL(request.url);
+  const month = normalizeMonth(url.searchParams.get('month') || new Date().toISOString().slice(0, 7));
   const clients = await prisma.client.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
@@ -39,6 +41,7 @@ export async function GET() {
   });
 
   const clientsWithDue = clients.map((client) => {
+    const billPerMonth = client.sites.filter((site) => site.isActive).reduce((sum, site) => sum + site.monthlyBill, 0);
     const dueBills = client.bills
       .map((bill) => {
         const paid = paidAmount(bill.payments);
@@ -58,6 +61,9 @@ export async function GET() {
       ...client,
       bills: undefined,
       dueBills,
+      billPerMonth,
+      previousDueAmount: dueBills.filter((bill) => bill.month < month).reduce((sum, bill) => sum + bill.dueAmount, 0),
+      totalBillAmount: billPerMonth + dueBills.filter((bill) => bill.month < month).reduce((sum, bill) => sum + bill.dueAmount, 0),
       totalDueAmount: dueBills.reduce((sum, bill) => sum + bill.dueAmount, 0),
     };
   });

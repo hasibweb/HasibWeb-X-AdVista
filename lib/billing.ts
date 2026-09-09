@@ -40,17 +40,18 @@ export function buildTemplateContext(
   const paid = paidAmount(bill.payments);
   const activeSites = bill.client.sites.filter((site) => site.isActive);
   const billPerMonth = activeSites.reduce((sum, site) => sum + site.monthlyBill, 0);
+  const previousDueAmount = Math.max(settings.previousDueAmount ?? bill.totalAmount - paid, 0);
   const valueOrFallback = (value?: string | null) => value?.trim() || 'N/A';
 
   return {
     client_name: valueOrFallback(bill.client.name),
     month: prettyMonth(bill.month),
-    total_bill: money.format(bill.totalAmount),
+    total_bill: money.format(billPerMonth + previousDueAmount),
     bill_per_month: money.format(billPerMonth),
     domains: activeSites.map((site) => site.domain).join(', ') || 'N/A',
     payment_status: bill.status,
     paid_amount: money.format(paid),
-    due_amount: money.format(Math.max(settings.previousDueAmount ?? bill.totalAmount - paid, 0)),
+    due_amount: money.format(previousDueAmount),
     crm_temporary_password: valueOrFallback(bill.client.crmTemporaryPassword),
     crm_name: valueOrFallback(settings.crmName),
     client_dashboard_link: valueOrFallback(settings.clientDashboardLink),
